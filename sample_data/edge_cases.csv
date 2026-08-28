@@ -1,0 +1,13 @@
+event_id,symbol,transaction_type,quantity
+evt-0001,RELIANCE,BUY,90
+evt-0001,TCS,SELL,999
+evt-0002,,BUY,10
+evt-0003,TCS,HOLD,10
+evt-0004,TCS,SELL,0
+evt-0005,TCS,SELL,-2
+evt-0006,TCS,BUY,1.5
+evt-0007,TCS,BUY,
+,TCS,BUY,5
+evt-0008,,SELL,5
+evt-0009,TCS,SELL,90
+evt-0010,TCS,BUY,90
