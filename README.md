@@ -1,0 +1,59 @@
+# Trading Order Position System
+
+This project reads order updates from CSV, validates each row, filters local duplicates, and sends the valid events to a small FastAPI service. The service keeps a net position per symbol in memory and ignores duplicate event IDs.
+
+## Setup
+
+```bash
+python -m venv .venv
+# Windows PowerShell
+.\.venv\Scripts\Activate.ps1
+# macOS / Linux
+# source .venv/bin/activate
+
+pip install -r requirements.txt
+```
+
+## Run the service
+
+```bash
+python -m src.position_service.main --host 127.0.0.1 --port 8000
+```
+
+## Send orders
+
+```bash
+python -m src.order_updater.main --csv-file sample_data/order_updates.csv --rate-limit 50
+```
+
+## Rules
+
+- BUY increases the net position for a symbol.
+- SELL decreases it.
+- Duplicate `event_id` values are ignored after the first accepted event.
+- Invalid rows are rejected with a clear validation reason.
+
+## Layout
+
+```text
+src/
+  common/
+    logger.py
+    models.py
+    rate_limiter.py
+    validator.py
+  order_updater/
+    client.py
+    main.py
+    reader.py
+  position_service/
+    main.py
+    server.py
+    tracker.py
+```
+
+## Tests
+
+```bash
+pytest -q
+```
