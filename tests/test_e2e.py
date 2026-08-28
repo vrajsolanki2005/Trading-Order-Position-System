@@ -1,3 +1,5 @@
+import csv
+
 from fastapi.testclient import TestClient
 
 from src.order_updater.main import process_file
@@ -49,10 +51,19 @@ def test_sample_order_updates_e2e(monkeypatch):
             return response.json()["status"]
         def close(self): pass
 
+    expected_positions = {}
+    with sample_csv.open("r", newline="", encoding="utf-8") as handle:
+        for row in csv.DictReader(handle):
+            symbol = row["symbol"]
+            quantity = int(row["quantity"])
+            delta = quantity if row["transaction_type"] == "BUY" else -quantity
+            expected_positions[symbol] = expected_positions.get(symbol, 0) + delta
+
     monkeypatch.setattr("src.order_updater.main.EventSender", TestSender)
     summary = process_file(str(sample_csv), "http://test", rate_limit=0)
-    assert summary == {"accepted": 7, "rejected": 0, "duplicates": 0, "sent": 7}
-    assert client.get("/position").json() == {"RELIANCE": 0, "TCS": 0, "INFY": 0}
+    row_count = sum(1 for _ in sample_csv.open("r", encoding="utf-8")) - 1
+    assert summary == {"accepted": row_count, "rejected": 0, "duplicates": 0, "sent": row_count}
+    assert client.get("/position").json() == expected_positions
 
 
 def test_sample_edge_cases_e2e(monkeypatch):
