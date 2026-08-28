@@ -1,11 +1,10 @@
-
 from collections.abc import Mapping
 from typing import Any
 
-from .models import OrderEvent, ValidationResult
+from .models import MAX_EVENT_ID_LEN, MAX_QUANTITY, MAX_SYMBOL_LEN, OrderEvent, ValidationResult
 
 
-def _required_text(row: Mapping[str, Any], field: str) -> tuple[str | None, str | None]:
+def _required_text(row: Mapping[str, Any], field: str, max_length: int) -> tuple[str | None, str | None]:
     value = row.get(field)
     if value is None:
         return None, f"missing {field}"
@@ -13,19 +12,30 @@ def _required_text(row: Mapping[str, Any], field: str) -> tuple[str | None, str 
     text = str(value).strip()
     if text == "":
         return None, f"{field} must be non-empty"
+    if len(text) > max_length:
+        return None, f"{field} exceeds maximum length of {max_length}"
     return text, None
 
 
-def _parse_quantity(value: Any) -> int | None:
+def _parse_quantity(value: Any) -> tuple[int | None, str | None]:
     if value is None:
-        return None
+        return None, "missing quantity"
 
     text = str(value).strip()
     if text == "" or not text.isascii() or not text.isdigit():
-        return None
+        return None, "quantity must be a positive integer"
 
-    quantity = int(text)
-    return quantity if quantity > 0 else None
+    try:
+        quantity = int(text)
+    except ValueError:
+        return None, "quantity must be a positive integer"
+
+    if quantity <= 0:
+        return None, "quantity must be a positive integer"
+    if quantity > MAX_QUANTITY:
+        return None, f"quantity exceeds maximum allowed limit of {MAX_QUANTITY}"
+
+    return quantity, None
 
 
 def validate_row(row: Mapping[str, Any]) -> ValidationResult:
@@ -35,11 +45,11 @@ def validate_row(row: Mapping[str, Any]) -> ValidationResult:
     if None in row and row[None]:
         return ValidationResult(valid=False, reason="row contains extra columns")
 
-    event_id, error = _required_text(row, "event_id")
+    event_id, error = _required_text(row, "event_id", MAX_EVENT_ID_LEN)
     if error:
         return ValidationResult(valid=False, reason=error)
 
-    symbol, error = _required_text(row, "symbol")
+    symbol, error = _required_text(row, "symbol", MAX_SYMBOL_LEN)
     if error:
         return ValidationResult(valid=False, reason=error)
 
@@ -49,11 +59,14 @@ def validate_row(row: Mapping[str, Any]) -> ValidationResult:
             reason="transaction_type must be exactly BUY or SELL",
         )
 
-    quantity = _parse_quantity(row.get("quantity"))
-    if quantity is None:
-        return ValidationResult(valid=False, reason="quantity must be a positive integer")
+    quantity, error = _parse_quantity(row.get("quantity"))
+    if error:
+        return ValidationResult(valid=False, reason=error)
 
     try:
+        assert event_id is not None
+        assert symbol is not None
+        assert quantity is not None
         event = OrderEvent(
             event_id=event_id,
             symbol=symbol,

@@ -27,6 +27,39 @@ def test_health():
     assert client.get("/health").json() == {"status": "ok"}
 
 
+def test_ready():
+    client = TestClient(create_app(PositionTracker()))
+    response = client.get("/ready")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ready", "database": "connected"}
+
+
+def test_get_symbol_position_and_404():
+    client = TestClient(create_app(PositionTracker()))
+    client.post("/events", json={"event_id": "evt-1", "symbol": "RELIANCE", "transaction_type": "BUY", "quantity": 150})
+    
+    resp = client.get("/position/RELIANCE")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["symbol"] == "RELIANCE"
+    assert data["net_position"] == 150
+    assert data["updated_at"] is not None
+
+    not_found = client.get("/position/NONEXISTENT")
+    assert not_found.status_code == 404
+
+
+def test_api_reconcile():
+    client = TestClient(create_app(PositionTracker()))
+    client.post("/events", json={"event_id": "evt-1", "symbol": "INFY", "transaction_type": "BUY", "quantity": 50})
+    client.post("/events", json={"event_id": "evt-2", "symbol": "INFY", "transaction_type": "SELL", "quantity": 20})
+    
+    resp = client.get("/api/v1/reconcile")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "consistent"
+    assert resp.json()["positions"] == {"INFY": 30}
+
+
 def test_reset_endpoint():
     client = TestClient(create_app(PositionTracker()))
     client.post("/events", json={"event_id": "evt-1", "symbol": "INFY", "transaction_type": "BUY", "quantity": 100})
@@ -61,4 +94,3 @@ def test_concurrent_api_requests():
         assert f.result() == 200
 
     assert client.get("/position").json() == {"AAPL": 100}
-

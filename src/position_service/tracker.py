@@ -1,30 +1,40 @@
-
-from threading import Lock
+from pathlib import Path
+from typing import Any
 
 from src.common.models import OrderEvent
+from src.position_service.db import Database
 
 
 class PositionTracker:
-    def __init__(self) -> None:
-        self._positions: dict[str, int] = {}
-        self._seen_event_ids: set[str] = set()
-        self._lock = Lock()
+    """High-level position tracker delegating to SQLite database storage."""
+
+    def __init__(self, db_path: str | Path = ":memory:", db: Database | None = None) -> None:
+        self.db = db if db is not None else Database(db_path)
 
     def apply(self, event: OrderEvent) -> bool:
-        with self._lock:
-            if event.event_id in self._seen_event_ids:
-                return False
-
-            delta = event.quantity if event.transaction_type == "BUY" else -event.quantity
-            self._positions[event.symbol] = self._positions.get(event.symbol, 0) + delta
-            self._seen_event_ids.add(event.event_id)
-            return True
+        """Apply an order event atomically. Returns True if accepted, False if duplicate."""
+        return self.db.apply_event(event)
 
     def snapshot(self) -> dict[str, int]:
-        with self._lock:
-            return dict(self._positions)
+        """Return snapshot dictionary of current net positions for all symbols."""
+        return self.db.get_positions()
+
+    def get_symbol_position(self, symbol: str) -> dict[str, Any] | None:
+        """Return position details for a specific symbol."""
+        return self.db.get_position(symbol)
+
+    def reconcile(self) -> dict[str, Any]:
+        """Verify consistency between event audit logs and positions table."""
+        return self.db.reconcile()
+
+    def is_healthy(self) -> bool:
+        """Check if underlying database storage is healthy and responsive."""
+        return self.db.is_healthy()
 
     def reset(self) -> None:
-        with self._lock:
-            self._positions.clear()
-            self._seen_event_ids.clear()
+        """Reset positions and event history."""
+        self.db.reset()
+
+    def close(self) -> None:
+        """Cleanly close database connections."""
+        self.db.close()

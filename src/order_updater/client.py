@@ -1,5 +1,5 @@
-
 import logging
+import random
 import time
 
 import httpx
@@ -11,6 +11,8 @@ logger = logging.getLogger(__name__)
 
 
 class EventSender:
+    """HTTP client for dispatching order events with rate limiting, retries, and jitter."""
+
     def __init__(
         self,
         service_url: str,
@@ -28,15 +30,20 @@ class EventSender:
         self._owns_client = client is None
 
     def close(self) -> None:
+        """Close the underlying HTTP client session if owned."""
         if self._owns_client:
             self.client.close()
 
     def send(self, event: OrderEvent) -> str:
+        """Send an order event to the Position Service with exponential backoff and jitter."""
         last_error: Exception | None = None
+
         for attempt in range(self.retry_count + 1):
             self.rate_limiter.wait()
             try:
                 response = self.client.post(self.url, json=event.model_dump())
+
+                # 4xx client errors are non-retryable: fail immediately
                 if 400 <= response.status_code < 500:
                     logger.error(
                         "Client error (%d) sending event %s: %s",
@@ -46,6 +53,7 @@ class EventSender:
                     )
                     response.raise_for_status()
 
+                # 5xx server errors are transient: raise to trigger retry
                 if 500 <= response.status_code < 600:
                     raise httpx.HTTPStatusError(
                         f"Server returned {response.status_code}: {response.text}",
@@ -56,6 +64,7 @@ class EventSender:
                 response.raise_for_status()
                 payload = response.json()
                 return str(payload.get("status", "accepted"))
+
             except httpx.HTTPStatusError as exc:
                 if 400 <= exc.response.status_code < 500:
                     raise
@@ -66,7 +75,11 @@ class EventSender:
             if attempt >= self.retry_count:
                 break
 
-            delay = self.backoff * (2**attempt)
+            # Calculate exponential backoff with random jitter (0-20%)
+            base_delay = self.backoff * (2**attempt)
+            jitter = random.uniform(0, 0.2 * base_delay) if base_delay > 0 else 0.0
+            delay = base_delay + jitter
+
             logger.warning(
                 "Delivery attempt %d/%d failed for %s: %s; retrying in %.2fs",
                 attempt + 1,

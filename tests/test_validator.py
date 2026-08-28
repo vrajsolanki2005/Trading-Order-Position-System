@@ -32,6 +32,15 @@ def test_blank_symbol():
     assert not validate_row(row(symbol="   ")).valid
 
 
+def test_field_length_limits():
+    # event_id > 128 chars rejected
+    assert not validate_row(row(event_id="e" * 129)).valid
+    # symbol > 32 chars rejected
+    assert not validate_row(row(symbol="S" * 33)).valid
+    # quantity > 1 trillion rejected
+    assert not validate_row(row(quantity="1000000000001")).valid
+
+
 def test_invalid_transaction_types():
     for value in ["HOLD", "buy", "Sell", "BUY1", "", 123, None]:
         result = validate_row(row(transaction_type=value))
@@ -63,4 +72,3 @@ def test_extra_columns_are_rejected():
 def test_non_mapping_input():
     assert not validate_row(None).valid  # type: ignore
     assert not validate_row("invalid").valid  # type: ignore
-
